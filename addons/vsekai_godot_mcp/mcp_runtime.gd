@@ -26,7 +26,7 @@ const MCPProtocolLib = preload("mcp_protocol.gd")
 const MCPHttpServerLib = preload("mcp_http_server.gd")
 const MCPStdioLib = preload("mcp_stdio.gd")
 
-const HOST := "127.0.0.1"   # adb forward reaches the device loopback
+const HOST := "127.0.0.1"  # adb forward reaches the device loopback
 const SETTINGS := "vsekai_godot_mcp/"
 
 ## Not 8788. The editor plugin listens there, and the ordinary way to run a game is to press
@@ -34,6 +34,7 @@ const SETTINGS := "vsekai_godot_mcp/"
 ## the bind every time it was most wanted, and said only "listen failed" while an MCP client
 ## went on talking to the editor and believing it was talking to the game.
 const HTTP_PORT_DEFAULT := 8789
+
 
 ## `--mcp-port=NNNN` after `--`, or GODOT_MCP_PORT. Two games at once need two ports, and a
 ## device reached over `adb forward` may have neither free. 0 turns HTTP off; -1 = not asked.
@@ -45,6 +46,7 @@ static func _resolve_port() -> int:
 	if not env.is_empty():
 		return int(env)
 	return -1
+
 
 var _cmds = MCPCommandsLib.new()
 var protocol = MCPProtocolLib.new()
@@ -67,7 +69,9 @@ func _ready() -> void:
 
 
 func _configure() -> void:
-	protocol.allow = PackedStringArray(ProjectSettings.get_setting(SETTINGS + "allow", PackedStringArray()))
+	protocol.allow = PackedStringArray(
+		ProjectSettings.get_setting(SETTINGS + "allow", PackedStringArray())
+	)
 	for key in ["server_name", "server_title", "instructions"]:
 		var v = ProjectSettings.get_setting(SETTINGS + key, "")
 		if String(v) != "":
@@ -98,8 +102,12 @@ func _start_http() -> void:
 	else:
 		# Say what is probably holding it. A bare "listen failed" sent everyone to the firewall,
 		# and it was almost always the editor plugin or a previous run of the same game.
-		push_error("[godot_mcp] runtime HTTP listen failed on :%d — something else holds it"
-			% port + " (the editor plugin uses 8788). Set --mcp-port= or GODOT_MCP_PORT.")
+		push_error(
+			(
+				"[godot_mcp] runtime HTTP listen failed on :%d — something else holds it" % port
+				+ " (the editor plugin uses 8788). Set --mcp-port= or GODOT_MCP_PORT."
+			)
+		)
 		_http = null
 
 

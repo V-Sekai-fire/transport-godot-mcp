@@ -72,7 +72,11 @@ func handle_line(line: String) -> void:
 		return
 	var req = JSON.parse_string(line)
 	# Every answer goes out deferred, so answers that need no frames keep the order of the lines.
-	var resp = protocol.parse_error_response(-32700, "parse error") if req == null else protocol.handle_rpc(req)
+	var resp = (
+		protocol.parse_error_response(-32700, "parse error")
+		if req == null
+		else protocol.handle_rpc(req)
+	)
 	if resp == null:
 		return
 	_answer_later.call_deferred(resp)
