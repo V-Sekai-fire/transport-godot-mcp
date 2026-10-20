@@ -16,7 +16,6 @@ The running game serves one tool list on every transport its platform has:
 
 - Streamable HTTP at `http://127.0.0.1:8789/mcp`, and the older HTTP+SSE pair (`GET /sse`, then `POST /messages`) on the same port. Set the port with `-- --mcp-port=N` or `GODOT_MCP_PORT`; 0 turns HTTP off.
 - stdio, with `--quiet ... -- --mcp-stdio`. The game quits when the client closes standard input.
-- A web export, where nothing can listen: `window.godotMcp.request(message)` on the page, and WebMCP (`navigator.modelContext`) when the browser has it.
 
 Protocol versions 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 start with `initialize`. Version 2026-07-28 has no handshake: each request names its version, and `server/discover` lists the versions.
 

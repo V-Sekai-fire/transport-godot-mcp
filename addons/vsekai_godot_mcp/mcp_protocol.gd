@@ -5,7 +5,7 @@ class_name MCPProtocol
 ## JSON-RPC request into a response Dictionary (or null for notifications),
 ## dispatching tools/call to MCPCommands. This lets the Godot addon BE the MCP
 ## server with no external process; mcp_http_server.gd (streamable HTTP and the
-## 2024-11-05 HTTP+SSE transport), mcp_stdio.gd and mcp_web.gd carry it.
+## 2024-11-05 HTTP+SSE transport), and mcp_stdio.gd carry it.
 ## Unit-tested headless (tests/test_protocol.gd).
 ##
 ## Two ways to change the tool list, so a game can ship a short one:
