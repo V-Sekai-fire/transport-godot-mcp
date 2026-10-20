@@ -16,10 +16,10 @@ class_name MCPCommandBuffer
 
 var _capacity: int
 var _ring: Array
-var _head := 0          # next write slot
-var _tail := 0          # next read slot
+var _head := 0  # next write slot
+var _tail := 0  # next read slot
 var _size := 0
-var dropped := 0        # count rejected by backpressure (observability)
+var dropped := 0  # count rejected by backpressure (observability)
 
 
 func _init(capacity: int = 256) -> void:
@@ -31,11 +31,14 @@ func _init(capacity: int = 256) -> void:
 func capacity() -> int:
 	return _capacity
 
+
 func pending() -> int:
 	return _size
 
+
 func is_full() -> bool:
 	return _size >= _capacity
+
 
 func is_empty() -> bool:
 	return _size == 0
@@ -59,7 +62,7 @@ func submit(budget: int) -> Array:
 	var n: int = min(max(0, budget), _size)
 	for _i in n:
 		out.append(_ring[_tail])
-		_ring[_tail] = null          # release the reference
+		_ring[_tail] = null  # release the reference
 		_tail = (_tail + 1) % _capacity
 		_size -= 1
 	return out

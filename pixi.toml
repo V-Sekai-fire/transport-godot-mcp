@@ -1,0 +1,13 @@
+[workspace]
+name = "transport-godot-mcp"
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64", "linux-aarch64", "win-64"]
+
+[dependencies]
+python = "3.12.*"
+mcp = ">=2.3,<3"
+
+[tasks]
+# The Godot headless tests, then the SDK interop check over every transport and version.
+test = "godot --headless --path . --script res://tests/test_adversarial.gd && godot --headless --path . --script res://tests/test_command_buffer.gd && godot --headless --path . --script res://tests/test_commands.gd && godot --headless --path . --script res://tests/test_http.gd && godot --headless --path . --script res://tests/test_parity.gd && godot --headless --path . --script res://tests/test_protocol.gd && godot --headless --path . --script res://tests/test_transports.gd"
+interop = "python tests/interop.py"

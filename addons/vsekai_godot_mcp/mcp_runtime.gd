@@ -4,10 +4,30 @@ extends Node
 ## SceneTree instead of the editor. Reach it over `adb forward`. Editor-only
 ## commands return an error; scene/node/eval/screenshot/performance work on the
 ## running game.
+##
+## One MCPProtocol, every transport the platform has:
+## - HTTP on 127.0.0.1: streamable HTTP at /mcp and the 2024-11-05 HTTP+SSE pair at /sse and
+##   /messages, on one port.
+## - stdio with `-- --mcp-stdio` (start the program with --quiet so the banner stays off
+##   standard output). The game quits when the client closes standard input.
+## A web export serves nothing: a page cannot listen, and it has no standard input.
+##
+## A game trims and extends the tool list in Project Settings, without code:
+## - vsekai_godot_mcp/allow (PackedStringArray): built-in tools to keep; empty keeps all.
+## - vsekai_godot_mcp/providers (PackedStringArray): scripts whose new() gives an object with
+##   tool_defs() and call_tool(name, args) (see mcp_protocol.gd). A Node provider is added as a
+##   child of this node, so it can reach the scene tree. A provider with scene_root() picks the
+##   node the built-in tools treat as the scene.
+## - vsekai_godot_mcp/server_name, server_title, instructions: what initialize reports.
+## - vsekai_godot_mcp/listen_by_default (bool, default true): when false, HTTP listens only
+##   when --mcp-port= or GODOT_MCP_PORT asks for it.
 const MCPCommandsLib = preload("mcp_commands.gd")
+const MCPProtocolLib = preload("mcp_protocol.gd")
 const MCPHttpServerLib = preload("mcp_http_server.gd")
+const MCPStdioLib = preload("mcp_stdio.gd")
 
-const HOST := "127.0.0.1"   # adb forward reaches the device loopback
+const HOST := "127.0.0.1"  # adb forward reaches the device loopback
+const SETTINGS := "vsekai_godot_mcp/"
 
 ## Not 8788. The editor plugin listens there, and the ordinary way to run a game is to press
 ## play in an editor that is already open — so sharing the number meant the runtime bridge lost
@@ -15,8 +35,9 @@ const HOST := "127.0.0.1"   # adb forward reaches the device loopback
 ## went on talking to the editor and believing it was talking to the game.
 const HTTP_PORT_DEFAULT := 8789
 
+
 ## `--mcp-port=NNNN` after `--`, or GODOT_MCP_PORT. Two games at once need two ports, and a
-## device reached over `adb forward` may have neither free.
+## device reached over `adb forward` may have neither free. 0 turns HTTP off; -1 = not asked.
 static func _resolve_port() -> int:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--mcp-port="):
@@ -24,27 +45,98 @@ static func _resolve_port() -> int:
 	var env := OS.get_environment("GODOT_MCP_PORT")
 	if not env.is_empty():
 		return int(env)
-	return HTTP_PORT_DEFAULT
+	return -1
+
 
 var _cmds = MCPCommandsLib.new()
-var _http = MCPHttpServerLib.new()
+var protocol = MCPProtocolLib.new()
+var _http = null
+var _stdio = null
+
 
 func _ready() -> void:
+	protocol.commands = _cmds
+	_configure()
+	if OS.has_feature("web"):
+		return
+	_start_http()
+	if "--mcp-stdio" in OS.get_cmdline_user_args():
+		_stdio = MCPStdioLib.new()
+		_stdio.protocol = protocol
+		_stdio.start()
+		printerr("[godot_mcp] RUNTIME MCP on stdio")
+	set_process(true)
+
+
+func _configure() -> void:
+	protocol.allow = PackedStringArray(
+		ProjectSettings.get_setting(SETTINGS + "allow", PackedStringArray())
+	)
+	for key in ["server_name", "server_title", "instructions"]:
+		var v = ProjectSettings.get_setting(SETTINGS + key, "")
+		if String(v) != "":
+			protocol.set(key, String(v))
+	for path in ProjectSettings.get_setting(SETTINGS + "providers", PackedStringArray()):
+		var script = load(path)
+		if script == null or not script.can_instantiate():
+			push_error("[godot_mcp] provider did not load: " + path)
+			continue
+		var p = script.new()
+		if p is Node:
+			add_child(p)
+		protocol.providers.append(p)
+
+
+func _start_http() -> void:
 	var port := _resolve_port()
-	_http.protocol.commands = _cmds
+	if port < 0:
+		if not ProjectSettings.get_setting(SETTINGS + "listen_by_default", true):
+			return
+		port = HTTP_PORT_DEFAULT
+	if port == 0:
+		return
+	_http = MCPHttpServerLib.new()
+	_http.protocol = protocol
 	if _http.start(port, HOST) == OK:
-		print("[godot_mcp] RUNTIME MCP on http://%s:%d/mcp" % [HOST, port])
+		printerr("[godot_mcp] RUNTIME MCP on http://%s:%d/mcp (and /sse)" % [HOST, port])
 	else:
 		# Say what is probably holding it. A bare "listen failed" sent everyone to the firewall,
 		# and it was almost always the editor plugin or a previous run of the same game.
-		push_error("[godot_mcp] runtime HTTP listen failed on :%d — something else holds it"
-			% port + " (the editor plugin uses 8788). Set --mcp-port= or GODOT_MCP_PORT.")
-	set_process(true)
+		push_error(
+			(
+				"[godot_mcp] runtime HTTP listen failed on :%d — something else holds it" % port
+				+ " (the editor plugin uses 8788). Set --mcp-port= or GODOT_MCP_PORT."
+			)
+		)
+		_http = null
+
 
 func _process(_delta: float) -> void:
 	_cmds.editor = null
-	_cmds.root = get_tree().current_scene if get_tree().current_scene else get_tree().root
-	_http.poll()
+	_cmds.root = _scene_root()
+	if _http:
+		_http.poll()
+	if _stdio:
+		_stdio.poll()
+		if _stdio.closed:
+			_stdio.stop()
+			_stdio = null
+			get_tree().quit()
+
+
+## The node the built-in tools treat as the scene: the first provider's scene_root() when it has
+## one (a game that builds its scene under an autoload), else the current scene.
+func _scene_root() -> Node:
+	for p in protocol.providers:
+		if p.has_method("scene_root"):
+			var r = p.scene_root()
+			if r is Node:
+				return r
+	return get_tree().current_scene if get_tree().current_scene else get_tree().root
+
 
 func _exit_tree() -> void:
-	_http.stop()
+	if _http:
+		_http.stop()
+	if _stdio:
+		_stdio.stop()

@@ -9,118 +9,237 @@ class_name MCPCommands
 ## Returns plain JSON-able values; an error is the dict {"__error__": true,
 ## "msg": ...} which the transport turns into {"ok": false, "error": ...}.
 
-var root: Node = null            # scene root the commands operate on
-var editor = null                # EditorInterface (null in headless tests)
+var root: Node = null  # scene root the commands operate on
+var editor = null  # EditorInterface (null in headless tests)
 
 
 func dispatch(cmd: String, a: Dictionary):
 	match cmd:
 		"ping":
-			return { "pong": true, "engine": Engine.get_version_info() }
-		"get_scene_tree": return _cmd_get_scene_tree(a)
-		"get_node": return _cmd_get_node(a)
-		"get_property": return _cmd_get_property(a)
-		"set_property": return _cmd_set_property(a)
-		"call_method": return _cmd_call_method(a)
-		"list_methods": return _cmd_list_members(a, true)
-		"list_properties": return _cmd_list_members(a, false)
-		"create_node": return _cmd_create_node(a)
-		"delete_node": return _cmd_delete_node(a)
-		"reparent_node": return _cmd_reparent_node(a)
-		"set_script": return _cmd_set_script(a)
-		"run_script": return _cmd_run_script(a)
-		"list_scenes": return { "scenes": _scan_ext("res://", ".tscn") }
+			return {"pong": true, "engine": Engine.get_version_info()}
+		"get_scene_tree":
+			return _cmd_get_scene_tree(a)
+		"get_node":
+			return _cmd_get_node(a)
+		"get_property":
+			return _cmd_get_property(a)
+		"set_property":
+			return _cmd_set_property(a)
+		"call_method":
+			return _cmd_call_method(a)
+		"list_methods":
+			return _cmd_list_members(a, true)
+		"list_properties":
+			return _cmd_list_members(a, false)
+		"create_node":
+			return _cmd_create_node(a)
+		"delete_node":
+			return _cmd_delete_node(a)
+		"reparent_node":
+			return _cmd_reparent_node(a)
+		"set_script":
+			return _cmd_set_script(a)
+		"run_script":
+			return _cmd_run_script(a)
+		"list_scenes":
+			return {"scenes": _scan_ext("res://", ".tscn")}
 		# --- editor-only (require EditorInterface) ---
-		"open_scene": return _need_editor() if editor == null else _ok(editor.open_scene_from_path(String(a.get("path", ""))))
-		"save_scene": return _need_editor() if editor == null else _ok(editor.save_scene())
-		"reimport_asset": return _cmd_reimport(a)
-		"rescan_filesystem": return _cmd_rescan(a)
+		"open_scene":
+			return (
+				_need_editor()
+				if editor == null
+				else _ok(editor.open_scene_from_path(String(a.get("path", ""))))
+			)
+		"save_scene":
+			return _need_editor() if editor == null else _ok(editor.save_scene())
+		"reimport_asset":
+			return _cmd_reimport(a)
+		"rescan_filesystem":
+			return _cmd_rescan(a)
 		"get_open_scene":
-			if editor == null: return _need_editor()
+			if editor == null:
+				return _need_editor()
 			var r = editor.get_edited_scene_root()
-			return { "path": (r.scene_file_path if r else ""), "root": (_node_brief(r) if r else null) }
+			return {"path": r.scene_file_path if r else "", "root": _node_brief(r) if r else null}
 		"play_scene":
-			if editor == null: return _need_editor()
-			if a.has("path") and String(a["path"]) != "": editor.play_custom_scene(String(a["path"]))
-			else: editor.play_current_scene()
-			return { "playing": true }
+			if editor == null:
+				return _need_editor()
+			if a.has("path") and String(a["path"]) != "":
+				editor.play_custom_scene(String(a["path"]))
+			else:
+				editor.play_current_scene()
+			return {"playing": true}
 		"play_main":
-			if editor == null: return _need_editor()
-			editor.play_main_scene(); return { "playing": true }
+			if editor == null:
+				return _need_editor()
+			editor.play_main_scene()
+			return {"playing": true}
 		"stop":
-			if editor == null: return _need_editor()
-			editor.stop_playing_scene(); return { "playing": false }
+			if editor == null:
+				return _need_editor()
+			editor.stop_playing_scene()
+			return {"playing": false}
 		"is_playing":
-			if editor == null: return _need_editor()
-			return { "playing": editor.is_playing_scene() }
-		"read_log": return _cmd_read_log(a)
-		"screenshot": return _cmd_screenshot(a)
+			if editor == null:
+				return _need_editor()
+			return {"playing": editor.is_playing_scene()}
+		"read_log":
+			return _cmd_read_log(a)
+		"screenshot":
+			return _cmd_screenshot(a)
 		# --- profiling / diagnostics ---
-		"get_performance": return _cmd_get_performance(a)
-		"list_monitors": return { "monitors": ["fps","frame_time","physics_frame_time","static_memory","object_count","node_count","resource_count","draw_calls","video_memory"] }
-		"get_memory_info": return { "static": OS.get_static_memory_usage(), "static_peak": OS.get_static_memory_peak_usage() }
-		"get_os_info": return { "name": OS.get_name(), "model": OS.get_model_name(), "locale": OS.get_locale(), "processor": OS.get_processor_name(), "threads": OS.get_processor_count() }
-		"get_video_info": return { "adapter": RenderingServer.get_video_adapter_name(), "vendor": RenderingServer.get_video_adapter_vendor(), "api": RenderingServer.get_video_adapter_api_version() }
-		"get_render_info": return _cmd_get_render_info(a)
-		"copy_file": return _cmd_copy_file(a)
-		"move_file": return _cmd_move_file(a)
-		"make_dir": return _cmd_make_dir(a)
-		"create_resource": return _cmd_create_resource(a)
+		"get_performance":
+			return _cmd_get_performance(a)
+		"list_monitors":
+			return {
+				"monitors":
+				[
+					"fps",
+					"frame_time",
+					"physics_frame_time",
+					"static_memory",
+					"object_count",
+					"node_count",
+					"resource_count",
+					"draw_calls",
+					"video_memory"
+				]
+			}
+		"get_memory_info":
+			return {
+				"static": OS.get_static_memory_usage(),
+				"static_peak": OS.get_static_memory_peak_usage()
+			}
+		"get_os_info":
+			return {
+				"name": OS.get_name(),
+				"model": OS.get_model_name(),
+				"locale": OS.get_locale(),
+				"processor": OS.get_processor_name(),
+				"threads": OS.get_processor_count()
+			}
+		"get_video_info":
+			return {
+				"adapter": RenderingServer.get_video_adapter_name(),
+				"vendor": RenderingServer.get_video_adapter_vendor(),
+				"api": RenderingServer.get_video_adapter_api_version()
+			}
+		"get_render_info":
+			return _cmd_get_render_info(a)
+		"copy_file":
+			return _cmd_copy_file(a)
+		"move_file":
+			return _cmd_move_file(a)
+		"make_dir":
+			return _cmd_make_dir(a)
+		"create_resource":
+			return _cmd_create_resource(a)
 		# --- project / assets ---
-		"read_file": return _cmd_read_file(a)
-		"write_file": return _cmd_write_file(a)
-		"file_exists": return { "exists": FileAccess.file_exists(String(a.get("path",""))) or DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(String(a.get("path","")))) }
-		"delete_file": return _cmd_delete_file(a)
-		"list_dir": return _cmd_list_dir(a)
-		"find_files": return { "files": _scan_ext(String(a.get("root","res://")), String(a.get("ext",""))) }
-		"create_script": return _cmd_create_script(a)
-		"create_scene": return _cmd_create_scene(a)
-		"instance_scene": return _cmd_instance_scene(a)
-		"save_branch_as_scene": return _cmd_save_branch_as_scene(a)
-		"get_project_setting": return { "value": _to_json(ProjectSettings.get_setting(String(a.get("setting","")), a.get("default"))) }
+		"read_file":
+			return _cmd_read_file(a)
+		"write_file":
+			return _cmd_write_file(a)
+		"file_exists":
+			return {
+				"exists":
+				(
+					FileAccess.file_exists(String(a.get("path", "")))
+					or DirAccess.dir_exists_absolute(
+						ProjectSettings.globalize_path(String(a.get("path", "")))
+					)
+				)
+			}
+		"delete_file":
+			return _cmd_delete_file(a)
+		"list_dir":
+			return _cmd_list_dir(a)
+		"find_files":
+			return {"files": _scan_ext(String(a.get("root", "res://")), String(a.get("ext", "")))}
+		"create_script":
+			return _cmd_create_script(a)
+		"create_scene":
+			return _cmd_create_scene(a)
+		"instance_scene":
+			return _cmd_instance_scene(a)
+		"save_branch_as_scene":
+			return _cmd_save_branch_as_scene(a)
+		"get_project_setting":
+			return {
+				"value":
+				_to_json(
+					ProjectSettings.get_setting(String(a.get("setting", "")), a.get("default"))
+				)
+			}
 		"set_project_setting":
-			ProjectSettings.set_setting(String(a.get("setting","")), _coerce(a.get("value"), TYPE_NIL))
-			return { "ok": true }
+			ProjectSettings.set_setting(
+				String(a.get("setting", "")), _coerce(a.get("value"), TYPE_NIL)
+			)
+			return {"ok": true}
 		# --- scene / hierarchy ---
-		"duplicate_node": return _cmd_duplicate_node(a)
-		"move_child": return _cmd_move_child(a)
-		"add_to_group": return _cmd_group(a, true)
-		"remove_from_group": return _cmd_group(a, false)
-		"get_nodes_in_group": return _cmd_get_nodes_in_group(a)
-		"find_nodes": return _cmd_find_nodes(a)
-		"get_node_count": return { "count": _count_descendants(root) }
+		"duplicate_node":
+			return _cmd_duplicate_node(a)
+		"move_child":
+			return _cmd_move_child(a)
+		"add_to_group":
+			return _cmd_group(a, true)
+		"remove_from_group":
+			return _cmd_group(a, false)
+		"get_nodes_in_group":
+			return _cmd_get_nodes_in_group(a)
+		"find_nodes":
+			return _cmd_find_nodes(a)
+		"get_node_count":
+			return {"count": _count_descendants(root)}
 		# --- spatial: transforms / bounds / skeleton (geometry diagnosis) ---
-		"get_transform": return _cmd_get_transform(a)
-		"get_aabb": return _cmd_get_aabb(a)
-		"get_bone_poses": return _cmd_get_bone_poses(a)
+		"get_transform":
+			return _cmd_get_transform(a)
+		"get_aabb":
+			return _cmd_get_aabb(a)
+		"get_bone_poses":
+			return _cmd_get_bone_poses(a)
 		# --- scripting / reflection (ClassDB + signals + singletons) ---
-		"class_exists": return { "exists": ClassDB.class_exists(String(a.get("class",""))) }
-		"get_class_methods": return _cmd_class_members(a, true)
-		"get_class_properties": return _cmd_class_members(a, false)
-		"list_signals": return _cmd_list_signals(a)
-		"emit_signal": return _cmd_emit_signal(a)
-		"connect_signal": return _cmd_connect_signal(a)
-		"call_singleton": return _cmd_call_singleton(a)
+		"class_exists":
+			return {"exists": ClassDB.class_exists(String(a.get("class", "")))}
+		"get_class_methods":
+			return _cmd_class_members(a, true)
+		"get_class_properties":
+			return _cmd_class_members(a, false)
+		"list_signals":
+			return _cmd_list_signals(a)
+		"emit_signal":
+			return _cmd_emit_signal(a)
+		"connect_signal":
+			return _cmd_connect_signal(a)
+		"call_singleton":
+			return _cmd_call_singleton(a)
 		"get_editor_setting":
-			if editor == null: return _need_editor()
-			return { "value": _to_json(editor.get_editor_settings().get_setting(String(a.get("setting","")))) }
+			if editor == null:
+				return _need_editor()
+			return {
+				"value":
+				_to_json(editor.get_editor_settings().get_setting(String(a.get("setting", ""))))
+			}
 		_:
 			return _err("unknown cmd: " + cmd)
 
 
 # --- helpers: errors ---------------------------------------------------------
 
+
 func _err(msg: String) -> Dictionary:
-	return { "__error__": true, "msg": msg }
+	return {"__error__": true, "msg": msg}
+
 
 func _need_editor() -> Dictionary:
 	return _err("EditorInterface not available in this context")
 
+
 func _ok(_v = null) -> Dictionary:
-	return { "ok": true }
+	return {"ok": true}
 
 
 # --- scene tree / nodes ------------------------------------------------------
+
 
 func _resolve(path: String) -> Node:
 	if root == null:
@@ -129,10 +248,12 @@ func _resolve(path: String) -> Node:
 		return root
 	return root.get_node_or_null(NodePath(path))
 
+
 func _cmd_get_scene_tree(a: Dictionary):
 	if root == null:
 		return _err("no scene root")
 	return _node_tree(root, root, clampi(int(a.get("max_depth", 64)), 0, 256))
+
 
 func _node_tree(n: Node, r: Node, depth: int) -> Dictionary:
 	var d := _node_brief(n)
@@ -144,11 +265,16 @@ func _node_tree(n: Node, r: Node, depth: int) -> Dictionary:
 	d["children"] = kids
 	return d
 
+
 func _node_brief(n: Node) -> Dictionary:
 	if n == null:
 		return {}
-	return { "name": String(n.name), "type": n.get_class(),
-		"script": (n.get_script().resource_path if n.get_script() else "") }
+	return {
+		"name": String(n.name),
+		"type": n.get_class(),
+		"script": n.get_script().resource_path if n.get_script() else ""
+	}
+
 
 func _cmd_get_node(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -161,6 +287,7 @@ func _cmd_get_node(a: Dictionary):
 	var brief := _node_brief(n)
 	brief["properties"] = props
 	return brief
+
 
 func _cmd_create_node(a: Dictionary):
 	var parent := _resolve(String(a.get("parent", "")))
@@ -175,7 +302,8 @@ func _cmd_create_node(a: Dictionary):
 	node.name = String(a.get("name", type))
 	parent.add_child(node)
 	node.owner = root
-	return { "created": String(root.get_path_to(node)) }
+	return {"created": String(root.get_path_to(node))}
+
 
 func _cmd_delete_node(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -185,7 +313,8 @@ func _cmd_delete_node(a: Dictionary):
 		return _err("refusing to delete the scene root")
 	n.get_parent().remove_child(n)
 	n.queue_free()
-	return { "deleted": true }
+	return {"deleted": true}
+
 
 func _cmd_reparent_node(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -198,7 +327,8 @@ func _cmd_reparent_node(a: Dictionary):
 		n.get_parent().remove_child(n)
 		new_parent.add_child(n)
 		n.owner = root
-	return { "reparented": String(root.get_path_to(n)) }
+	return {"reparented": String(root.get_path_to(n))}
+
 
 func _cmd_set_script(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -208,16 +338,18 @@ func _cmd_set_script(a: Dictionary):
 	if res == null:
 		return _err("could not load script: " + String(a.get("script", "")))
 	n.set_script(res)
-	return { "ok": true }
+	return {"ok": true}
 
 
 # --- reflection --------------------------------------------------------------
+
 
 func _cmd_get_property(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
 	if n == null:
 		return _err("node not found")
-	return { "value": _to_json(n.get(String(a.get("property", "")))) }
+	return {"value": _to_json(n.get(String(a.get("property", ""))))}
+
 
 func _cmd_set_property(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -225,9 +357,11 @@ func _cmd_set_property(a: Dictionary):
 		return _err("node not found")
 	var prop := String(a.get("property", ""))
 	n.set(prop, _coerce(a.get("value"), typeof(n.get(prop))))
-	return { "value": _to_json(n.get(prop)) }
+	return {"value": _to_json(n.get(prop))}
+
 
 const _BLOCKED_METHODS := ["free", "queue_free", "set_owner"]
+
 
 func _cmd_call_method(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -243,7 +377,8 @@ func _cmd_call_method(a: Dictionary):
 	if raw is Array:
 		for v in raw:
 			call_args.append(_coerce(v, TYPE_NIL))
-	return { "value": _to_json(n.callv(method, call_args)) }
+	return {"value": _to_json(n.callv(method, call_args))}
+
 
 func _cmd_list_members(a: Dictionary, methods: bool):
 	var n := _resolve(String(a.get("path", "")))
@@ -252,12 +387,13 @@ func _cmd_list_members(a: Dictionary, methods: bool):
 	var out := []
 	if methods:
 		for m in n.get_method_list():
-			out.append({ "name": m.name, "args": m.args.size() })
+			out.append({"name": m.name, "args": m.args.size()})
 	else:
 		for p in n.get_property_list():
 			if int(p.usage) & PROPERTY_USAGE_EDITOR:
-				out.append({ "name": p.name, "type": p.type })
-	return { "members": out }
+				out.append({"name": p.name, "type": p.type})
+	return {"members": out}
+
 
 func _cmd_run_script(a: Dictionary):
 	var indented := ""
@@ -270,10 +406,11 @@ func _cmd_run_script(a: Dictionary):
 	if perr != OK:
 		return _err("GDScript compile failed (err %d)" % perr)
 	var inst = gd.new()
-	return { "value": _to_json(inst.call("run", editor, root)) }
+	return {"value": _to_json(inst.call("run", editor, root))}
 
 
 # --- profiling (parity with Unity-MCP diagnostics) --------------------------
+
 
 func _cmd_get_performance(a: Dictionary):
 	# Expose Godot's Performance monitors (fps, mem, draw calls, object counts…).
@@ -294,16 +431,18 @@ func _cmd_get_performance(a: Dictionary):
 		if typeof(want) == TYPE_ARRAY and want.size() > 0 and not (key in want):
 			continue
 		out[key] = Performance.get_monitor(names[key])
-	return { "monitors": out }
+	return {"monitors": out}
 
 
 # --- project / assets -------------------------------------------------------
+
 
 func _cmd_read_file(a: Dictionary):
 	var path := String(a.get("path", ""))
 	if not FileAccess.file_exists(path):
 		return _err("file not found: " + path)
-	return { "text": FileAccess.open(path, FileAccess.READ).get_as_text() }
+	return {"text": FileAccess.open(path, FileAccess.READ).get_as_text()}
+
 
 func _cmd_write_file(a: Dictionary):
 	var f := FileAccess.open(String(a.get("path", "")), FileAccess.WRITE)
@@ -311,12 +450,14 @@ func _cmd_write_file(a: Dictionary):
 		return _err("cannot open for write: " + String(a.get("path", "")))
 	f.store_string(String(a.get("text", "")))
 	f.close()
-	return { "ok": true }
+	return {"ok": true}
+
 
 func _cmd_delete_file(a: Dictionary):
 	var g := ProjectSettings.globalize_path(String(a.get("path", "")))
 	var err := DirAccess.remove_absolute(g)
-	return { "ok": true } if err == OK else _err("delete failed (%d)" % err)
+	return {"ok": true} if err == OK else _err("delete failed (%d)" % err)
+
 
 func _cmd_list_dir(a: Dictionary):
 	var path := String(a.get("path", "res://"))
@@ -335,7 +476,8 @@ func _cmd_list_dir(a: Dictionary):
 				files.append(n)
 		n = d.get_next()
 	d.list_dir_end()
-	return { "files": files, "dirs": dirs }
+	return {"files": files, "dirs": dirs}
+
 
 func _cmd_create_script(a: Dictionary):
 	var path := String(a.get("path", ""))
@@ -344,7 +486,8 @@ func _cmd_create_script(a: Dictionary):
 		return _err("cannot write script: " + path)
 	f.store_string(String(a.get("source", "extends Node\n")))
 	f.close()
-	return { "created": path }
+	return {"created": path}
+
 
 func _cmd_create_scene(a: Dictionary):
 	var type := String(a.get("root_type", "Node"))
@@ -358,7 +501,8 @@ func _cmd_create_scene(a: Dictionary):
 		return _err("pack failed")
 	var werr := ResourceSaver.save(ps, String(a.get("path", "")))
 	r.free()
-	return { "created": String(a.get("path", "")) } if werr == OK else _err("save failed (%d)" % werr)
+	return {"created": String(a.get("path", ""))} if werr == OK else _err("save failed (%d)" % werr)
+
 
 func _cmd_instance_scene(a: Dictionary):
 	if root == null:
@@ -372,7 +516,8 @@ func _cmd_instance_scene(a: Dictionary):
 	var inst: Node = scene.instantiate()
 	parent.add_child(inst)
 	inst.owner = root
-	return { "instanced": String(root.get_path_to(inst)) }
+	return {"instanced": String(root.get_path_to(inst))}
+
 
 func _cmd_save_branch_as_scene(a: Dictionary):
 	var n := _resolve(String(a.get("path", ".")))
@@ -382,7 +527,7 @@ func _cmd_save_branch_as_scene(a: Dictionary):
 	if ps.pack(n) != OK:
 		return _err("pack failed")
 	var werr := ResourceSaver.save(ps, String(a.get("scene", "")))
-	return { "saved": String(a.get("scene", "")) } if werr == OK else _err("save failed (%d)" % werr)
+	return {"saved": String(a.get("scene", ""))} if werr == OK else _err("save failed (%d)" % werr)
 
 
 func _cmd_get_render_info(_a: Dictionary):
@@ -396,28 +541,45 @@ func _cmd_get_render_info(_a: Dictionary):
 		"video_mem": R.get_rendering_info(R.RENDERING_INFO_VIDEO_MEM_USED),
 	}
 
+
 func _cmd_copy_file(a: Dictionary):
-	var err := DirAccess.copy_absolute(ProjectSettings.globalize_path(String(a.get("from", ""))), ProjectSettings.globalize_path(String(a.get("to", ""))))
-	return { "ok": true } if err == OK else _err("copy failed (%d)" % err)
+	var err := DirAccess.copy_absolute(
+		ProjectSettings.globalize_path(String(a.get("from", ""))),
+		ProjectSettings.globalize_path(String(a.get("to", "")))
+	)
+	return {"ok": true} if err == OK else _err("copy failed (%d)" % err)
+
 
 func _cmd_move_file(a: Dictionary):
-	var err := DirAccess.rename_absolute(ProjectSettings.globalize_path(String(a.get("from", ""))), ProjectSettings.globalize_path(String(a.get("to", ""))))
-	return { "ok": true } if err == OK else _err("move failed (%d)" % err)
+	var err := DirAccess.rename_absolute(
+		ProjectSettings.globalize_path(String(a.get("from", ""))),
+		ProjectSettings.globalize_path(String(a.get("to", "")))
+	)
+	return {"ok": true} if err == OK else _err("move failed (%d)" % err)
+
 
 func _cmd_make_dir(a: Dictionary):
-	var err := DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(String(a.get("path", ""))))
-	return { "ok": true } if err == OK else _err("mkdir failed (%d)" % err)
+	var err := DirAccess.make_dir_recursive_absolute(
+		ProjectSettings.globalize_path(String(a.get("path", "")))
+	)
+	return {"ok": true} if err == OK else _err("mkdir failed (%d)" % err)
+
 
 func _cmd_create_resource(a: Dictionary):
 	var cls := String(a.get("class", ""))
-	if not ClassDB.class_exists(cls) or not ClassDB.can_instantiate(cls) or not ClassDB.is_parent_class(cls, "Resource"):
+	if (
+		not ClassDB.class_exists(cls)
+		or not ClassDB.can_instantiate(cls)
+		or not ClassDB.is_parent_class(cls, "Resource")
+	):
 		return _err("not an instantiable Resource: " + cls)
 	var res = ClassDB.instantiate(cls)
 	var werr := ResourceSaver.save(res, String(a.get("path", "")))
-	return { "created": String(a.get("path", "")) } if werr == OK else _err("save failed (%d)" % werr)
+	return {"created": String(a.get("path", ""))} if werr == OK else _err("save failed (%d)" % werr)
 
 
 # --- scene / hierarchy (more) -----------------------------------------------
+
 
 func _cmd_duplicate_node(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -428,7 +590,8 @@ func _cmd_duplicate_node(a: Dictionary):
 	var dup := n.duplicate()
 	n.get_parent().add_child(dup)
 	dup.owner = root
-	return { "duplicated": String(root.get_path_to(dup)) }
+	return {"duplicated": String(root.get_path_to(dup))}
+
 
 func _cmd_move_child(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -439,7 +602,8 @@ func _cmd_move_child(a: Dictionary):
 		return _err("node has no parent")
 	var idx := clampi(int(a.get("to_index", 0)), 0, max(0, parent.get_child_count() - 1))
 	parent.move_child(n, idx)
-	return { "index": n.get_index() }
+	return {"index": n.get_index()}
+
 
 func _cmd_group(a: Dictionary, add: bool):
 	var n := _resolve(String(a.get("path", "")))
@@ -449,7 +613,8 @@ func _cmd_group(a: Dictionary, add: bool):
 		n.add_to_group(String(a.get("group", "")), true)
 	else:
 		n.remove_from_group(String(a.get("group", "")))
-	return { "ok": true }
+	return {"ok": true}
+
 
 func _cmd_get_nodes_in_group(a: Dictionary):
 	if root == null:
@@ -461,7 +626,8 @@ func _cmd_get_nodes_in_group(a: Dictionary):
 	for n in root.find_children("*", "", true, false):
 		if n.is_in_group(g):
 			out.append(String(root.get_path_to(n)))
-	return { "nodes": out }
+	return {"nodes": out}
+
 
 func _cmd_find_nodes(a: Dictionary):
 	if root == null:
@@ -471,8 +637,11 @@ func _cmd_find_nodes(a: Dictionary):
 		pat = "*"
 	var out := []
 	for n in root.find_children(pat, String(a.get("type", "")), true, false):
-		out.append({ "path": String(root.get_path_to(n)), "type": n.get_class(), "name": String(n.name) })
-	return { "nodes": out }
+		out.append(
+			{"path": String(root.get_path_to(n)), "type": n.get_class(), "name": String(n.name)}
+		)
+	return {"nodes": out}
+
 
 func _count_descendants(n) -> int:
 	if n == null:
@@ -484,6 +653,7 @@ func _count_descendants(n) -> int:
 
 
 # --- reflection: ClassDB / signals / singletons -----------------------------
+
 
 func _cmd_class_members(a: Dictionary, methods: bool):
 	var cls := String(a.get("class", ""))
@@ -497,7 +667,8 @@ func _cmd_class_members(a: Dictionary, methods: bool):
 	else:
 		for p in ClassDB.class_get_property_list(cls, no_inherit):
 			out.append(p.name)
-	return { "members": out }
+	return {"members": out}
+
 
 func _cmd_list_signals(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -506,7 +677,8 @@ func _cmd_list_signals(a: Dictionary):
 	var out := []
 	for s in n.get_signal_list():
 		out.append(s.name)
-	return { "signals": out }
+	return {"signals": out}
+
 
 func _cmd_emit_signal(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -518,7 +690,8 @@ func _cmd_emit_signal(a: Dictionary):
 		for v in raw:
 			args.append(_coerce(v, TYPE_NIL))
 	n.callv("emit_signal", args)
-	return { "ok": true }
+	return {"ok": true}
+
 
 func _cmd_connect_signal(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -526,7 +699,8 @@ func _cmd_connect_signal(a: Dictionary):
 	if n == null or target == null:
 		return _err("node or target not found")
 	var err := n.connect(String(a.get("signal", "")), Callable(target, String(a.get("method", ""))))
-	return { "ok": true } if err == OK else _err("connect failed (%d)" % err)
+	return {"ok": true} if err == OK else _err("connect failed (%d)" % err)
+
 
 func _cmd_call_singleton(a: Dictionary):
 	var sname := String(a.get("singleton", ""))
@@ -541,24 +715,33 @@ func _cmd_call_singleton(a: Dictionary):
 	if raw is Array:
 		for v in raw:
 			args.append(_coerce(v, TYPE_NIL))
-	return { "value": _to_json(s.callv(method, args)) }
+	return {"value": _to_json(s.callv(method, args))}
 
 
 # --- logs / screenshot (need editor) ----------------------------------------
+
 
 func _cmd_read_log(a: Dictionary):
 	var n := int(a.get("lines", 100))
 	if editor != null:
 		var rtl := _find_editor_log_richtext(editor.get_base_control())
 		if rtl != null:
-			var text: String = rtl.get_parsed_text() if rtl.has_method("get_parsed_text") else String(rtl.get("text"))
+			var text: String = (
+				rtl.get_parsed_text()
+				if rtl.has_method("get_parsed_text")
+				else String(rtl.get("text"))
+			)
 			var lines := text.split("\n")
-			return { "source": "editor_output", "lines": lines.slice(max(0, lines.size() - n), lines.size()) }
+			return {
+				"source": "editor_output",
+				"lines": lines.slice(max(0, lines.size() - n), lines.size())
+			}
 	var path := "user://logs/godot.log"
 	if FileAccess.file_exists(path):
 		var all := FileAccess.open(path, FileAccess.READ).get_as_text().split("\n")
-		return { "source": "log_file", "lines": all.slice(max(0, all.size() - n), all.size()) }
-	return { "lines": [], "note": "no EditorLog and file logging disabled" }
+		return {"source": "log_file", "lines": all.slice(max(0, all.size() - n), all.size())}
+	return {"lines": [], "note": "no EditorLog and file logging disabled"}
+
 
 func _find_editor_log_richtext(node: Node) -> RichTextLabel:
 	if node.get_class() == "EditorLog":
@@ -571,6 +754,7 @@ func _find_editor_log_richtext(node: Node) -> RichTextLabel:
 			return found
 	return null
 
+
 func _first_richtext(node: Node) -> RichTextLabel:
 	if node is RichTextLabel:
 		return node
@@ -580,12 +764,13 @@ func _first_richtext(node: Node) -> RichTextLabel:
 			return r
 	return null
 
+
 func _cmd_screenshot(a: Dictionary):
 	var vp: Viewport = null
 	if editor != null:
 		vp = editor.get_base_control().get_viewport()
 	elif root != null:
-		vp = root.get_viewport()           # runtime: capture the live game viewport
+		vp = root.get_viewport()  # runtime: capture the live game viewport
 	if vp == null:
 		return _err("no viewport to capture")
 	var img: Image = vp.get_texture().get_image()
@@ -594,10 +779,15 @@ func _cmd_screenshot(a: Dictionary):
 	var path := String(a.get("path", "user://godot_mcp_screenshot.png"))
 	if img.save_png(path) != OK:
 		return _err("save_png failed")
-	return { "path": ProjectSettings.globalize_path(path), "width": img.get_width(), "height": img.get_height() }
+	return {
+		"path": ProjectSettings.globalize_path(path),
+		"width": img.get_width(),
+		"height": img.get_height()
+	}
 
 
 # --- spatial: transforms / bounds / skeleton --------------------------------
+
 
 func _cmd_get_transform(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
@@ -613,6 +803,7 @@ func _cmd_get_transform(a: Dictionary):
 		"global_rotation_deg": _to_json(n3.global_rotation_degrees),
 		"scale": _to_json(n3.scale),
 	}
+
 
 func _cmd_get_aabb(a: Dictionary):
 	var n := _resolve(String(a.get("path", ".")))
@@ -642,6 +833,7 @@ func _cmd_get_aabb(a: Dictionary):
 		"center": _to_json(result.get_center()),
 	}
 
+
 func _cmd_get_bone_poses(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
 	if n == null:
@@ -649,24 +841,30 @@ func _cmd_get_bone_poses(a: Dictionary):
 	if not (n is Skeleton3D):
 		return _err("node is not a Skeleton3D: " + n.get_class())
 	var sk := n as Skeleton3D
-	var only = a.get("bones", null)   # optional: array of bone names to filter
+	var only = a.get("bones", null)  # optional: array of bone names to filter
 	var bones := []
 	for i in range(sk.get_bone_count()):
 		var bname := sk.get_bone_name(i)
 		if only is Array and only.size() > 0 and not (bname in only):
 			continue
-		bones.append({
-			"index": i,
-			"name": bname,
-			"parent": sk.get_bone_parent(i),
-			"rest": _to_json(sk.get_bone_rest(i)),
-			"pose_local": _to_json(sk.get_bone_pose(i)),
-			"global_pose": _to_json(sk.get_bone_global_pose(i)),
-		})
-	return { "skeleton": String(sk.name), "bone_count": sk.get_bone_count(), "bones": bones }
+		(
+			bones
+			. append(
+				{
+					"index": i,
+					"name": bname,
+					"parent": sk.get_bone_parent(i),
+					"rest": _to_json(sk.get_bone_rest(i)),
+					"pose_local": _to_json(sk.get_bone_pose(i)),
+					"global_pose": _to_json(sk.get_bone_global_pose(i)),
+				}
+			)
+		)
+	return {"skeleton": String(sk.name), "bone_count": sk.get_bone_count(), "bones": bones}
 
 
 # --- asset reimport (parity with Unity-MCP assets-refresh) ------------------
+
 
 func _cmd_reimport(a: Dictionary):
 	if editor == null:
@@ -681,18 +879,22 @@ func _cmd_reimport(a: Dictionary):
 	if paths.is_empty():
 		return _err("no paths given (use 'path' or 'paths')")
 	editor.get_resource_filesystem().reimport_files(paths)
-	return { "reimported": Array(paths) }
+	return {"reimported": Array(paths)}
+
 
 func _cmd_rescan(_a: Dictionary):
 	if editor == null:
 		return _need_editor()
 	editor.get_resource_filesystem().scan()
-	return { "ok": true }
+	return {"ok": true}
 
 
 # --- scan + JSON (de)serialization + coercion -------------------------------
 
-func _scan_ext(dir_path: String, ext: String, out: PackedStringArray = PackedStringArray()) -> PackedStringArray:
+
+func _scan_ext(
+	dir_path: String, ext: String, out: PackedStringArray = PackedStringArray()
+) -> PackedStringArray:
 	var d := DirAccess.open(dir_path)
 	if d == null:
 		return out
@@ -709,6 +911,7 @@ func _scan_ext(dir_path: String, ext: String, out: PackedStringArray = PackedStr
 	d.list_dir_end()
 	return out
 
+
 func _to_json(v, depth: int = 0):
 	if depth > 32:
 		return "<max-depth>"
@@ -717,20 +920,26 @@ func _to_json(v, depth: int = 0):
 			return v
 		TYPE_STRING_NAME, TYPE_NODE_PATH:
 			return String(v)
-		TYPE_VECTOR2: return { "__t__": "Vector2", "x": v.x, "y": v.y }
-		TYPE_VECTOR3: return { "__t__": "Vector3", "x": v.x, "y": v.y, "z": v.z }
-		TYPE_VECTOR4: return { "__t__": "Vector4", "x": v.x, "y": v.y, "z": v.z, "w": v.w }
-		TYPE_COLOR: return { "__t__": "Color", "r": v.r, "g": v.g, "b": v.b, "a": v.a }
-		TYPE_QUATERNION: return { "__t__": "Quaternion", "x": v.x, "y": v.y, "z": v.z, "w": v.w }
-		TYPE_VECTOR2I: return { "__t__": "Vector2i", "x": v.x, "y": v.y }
-		TYPE_VECTOR3I: return { "__t__": "Vector3i", "x": v.x, "y": v.y, "z": v.z }
+		TYPE_VECTOR2:
+			return {"__t__": "Vector2", "x": v.x, "y": v.y}
+		TYPE_VECTOR3:
+			return {"__t__": "Vector3", "x": v.x, "y": v.y, "z": v.z}
+		TYPE_VECTOR4:
+			return {"__t__": "Vector4", "x": v.x, "y": v.y, "z": v.z, "w": v.w}
+		TYPE_COLOR:
+			return {"__t__": "Color", "r": v.r, "g": v.g, "b": v.b, "a": v.a}
+		TYPE_QUATERNION:
+			return {"__t__": "Quaternion", "x": v.x, "y": v.y, "z": v.z, "w": v.w}
+		TYPE_VECTOR2I:
+			return {"__t__": "Vector2i", "x": v.x, "y": v.y}
+		TYPE_VECTOR3I:
+			return {"__t__": "Vector3i", "x": v.x, "y": v.y, "z": v.z}
 		# Matrix / bounds types: Godot-native, lossless Variant<->JSON via
 		# JSON.from_native (Godot 4.3+), reversed in _coerce by JSON.to_native —
 		# no hand-rolled layout to drift. Emits {"type":..., "args":[...]}.
-		TYPE_BASIS, TYPE_TRANSFORM2D, TYPE_TRANSFORM3D, TYPE_AABB, TYPE_PLANE, TYPE_RECT2, TYPE_PROJECTION: return JSON.from_native(v)
-		TYPE_ARRAY, TYPE_PACKED_INT32_ARRAY, TYPE_PACKED_INT64_ARRAY, \
-		TYPE_PACKED_FLOAT32_ARRAY, TYPE_PACKED_FLOAT64_ARRAY, TYPE_PACKED_STRING_ARRAY, \
-		TYPE_PACKED_VECTOR2_ARRAY, TYPE_PACKED_VECTOR3_ARRAY, TYPE_PACKED_COLOR_ARRAY:
+		TYPE_BASIS, TYPE_TRANSFORM2D, TYPE_TRANSFORM3D, TYPE_AABB, TYPE_PLANE, TYPE_RECT2, TYPE_PROJECTION:
+			return JSON.from_native(v)
+		TYPE_ARRAY, TYPE_PACKED_INT32_ARRAY, TYPE_PACKED_INT64_ARRAY, TYPE_PACKED_FLOAT32_ARRAY, TYPE_PACKED_FLOAT64_ARRAY, TYPE_PACKED_STRING_ARRAY, TYPE_PACKED_VECTOR2_ARRAY, TYPE_PACKED_VECTOR3_ARRAY, TYPE_PACKED_COLOR_ARRAY:
 			var arr := []
 			for e in v:
 				arr.append(_to_json(e, depth + 1))
@@ -744,29 +953,44 @@ func _to_json(v, depth: int = 0):
 			if v == null:
 				return null
 			if v is Node:
-				return { "__t__": "Node", "path": (String(root.get_path_to(v)) if root else ""), "class": v.get_class() }
+				return {
+					"__t__": "Node",
+					"path": String(root.get_path_to(v)) if root else "",
+					"class": v.get_class()
+				}
 			if v is Resource:
-				return { "__t__": "Resource", "path": v.resource_path, "class": v.get_class() }
-			return { "__t__": "Object", "class": v.get_class() }
+				return {"__t__": "Resource", "path": v.resource_path, "class": v.get_class()}
+			return {"__t__": "Object", "class": v.get_class()}
 		_:
 			return str(v)
+
 
 func _coerce(v, target_type: int):
 	if typeof(v) == TYPE_DICTIONARY and v.has("__t__"):
 		match String(v["__t__"]):
-			"Vector2": return Vector2(v.get("x", 0), v.get("y", 0))
-			"Vector3": return Vector3(v.get("x", 0), v.get("y", 0), v.get("z", 0))
-			"Vector4": return Vector4(v.get("x", 0), v.get("y", 0), v.get("z", 0), v.get("w", 0))
-			"Color": return Color(v.get("r", 0), v.get("g", 0), v.get("b", 0), v.get("a", 1))
-			"Quaternion": return Quaternion(v.get("x", 0), v.get("y", 0), v.get("z", 0), v.get("w", 1))
-			"Vector2i": return Vector2i(int(v.get("x", 0)), int(v.get("y", 0)))
-			"Vector3i": return Vector3i(int(v.get("x", 0)), int(v.get("y", 0)), int(v.get("z", 0)))
+			"Vector2":
+				return Vector2(v.get("x", 0), v.get("y", 0))
+			"Vector3":
+				return Vector3(v.get("x", 0), v.get("y", 0), v.get("z", 0))
+			"Vector4":
+				return Vector4(v.get("x", 0), v.get("y", 0), v.get("z", 0), v.get("w", 0))
+			"Color":
+				return Color(v.get("r", 0), v.get("g", 0), v.get("b", 0), v.get("a", 1))
+			"Quaternion":
+				return Quaternion(v.get("x", 0), v.get("y", 0), v.get("z", 0), v.get("w", 1))
+			"Vector2i":
+				return Vector2i(int(v.get("x", 0)), int(v.get("y", 0)))
+			"Vector3i":
+				return Vector3i(int(v.get("x", 0)), int(v.get("y", 0)), int(v.get("z", 0)))
 	# Godot-native JSON payloads (Transform3D / Basis / AABB / Plane / …) emitted
 	# by _to_json via JSON.from_native — rebuild the engine Variant losslessly.
 	if typeof(v) == TYPE_DICTIONARY and v.has("type") and v.has("args"):
 		return JSON.to_native(v)
 	if typeof(v) == TYPE_ARRAY:
-		if target_type == TYPE_VECTOR3 and v.size() == 3: return Vector3(v[0], v[1], v[2])
-		if target_type == TYPE_VECTOR2 and v.size() == 2: return Vector2(v[0], v[1])
-		if target_type == TYPE_COLOR and v.size() >= 3: return Color(v[0], v[1], v[2], v[3] if v.size() > 3 else 1.0)
+		if target_type == TYPE_VECTOR3 and v.size() == 3:
+			return Vector3(v[0], v[1], v[2])
+		if target_type == TYPE_VECTOR2 and v.size() == 2:
+			return Vector2(v[0], v[1])
+		if target_type == TYPE_COLOR and v.size() >= 3:
+			return Color(v[0], v[1], v[2], v[3] if v.size() > 3 else 1.0)
 	return v
