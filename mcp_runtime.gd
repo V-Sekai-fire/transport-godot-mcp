@@ -16,7 +16,8 @@ extends Node
 ## - vsekai_godot_mcp/allow (PackedStringArray): built-in tools to keep; empty keeps all.
 ## - vsekai_godot_mcp/providers (PackedStringArray): scripts whose new() gives an object with
 ##   tool_defs() and call_tool(name, args) (see mcp_protocol.gd). A Node provider is added as a
-##   child of this node, so it can reach the scene tree.
+##   child of this node, so it can reach the scene tree. A provider with scene_root() picks the
+##   node the built-in tools treat as the scene.
 ## - vsekai_godot_mcp/server_name, server_title, instructions: what initialize reports.
 ## - vsekai_godot_mcp/listen_by_default (bool, default true): when false, HTTP listens only
 ##   when --mcp-port= or GODOT_MCP_PORT asks for it.
@@ -110,7 +111,7 @@ func _start_http() -> void:
 
 func _process(_delta: float) -> void:
 	_cmds.editor = null
-	_cmds.root = get_tree().current_scene if get_tree().current_scene else get_tree().root
+	_cmds.root = _scene_root()
 	if _http:
 		_http.poll()
 	if _stdio:
@@ -119,6 +120,17 @@ func _process(_delta: float) -> void:
 			_stdio.stop()
 			_stdio = null
 			get_tree().quit()
+
+
+## The node the built-in tools treat as the scene: the first provider's scene_root() when it has
+## one (a game that builds its scene under an autoload), else the current scene.
+func _scene_root() -> Node:
+	for p in protocol.providers:
+		if p.has_method("scene_root"):
+			var r = p.scene_root()
+			if r is Node:
+				return r
+	return get_tree().current_scene if get_tree().current_scene else get_tree().root
 
 
 func _exit_tree() -> void:
