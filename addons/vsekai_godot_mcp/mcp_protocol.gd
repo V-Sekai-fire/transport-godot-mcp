@@ -4,18 +4,54 @@ class_name MCPProtocol
 ## Pure MCP / JSON-RPC 2.0 handler — no transport, no HTTP. Turns a decoded
 ## JSON-RPC request into a response Dictionary (or null for notifications),
 ## dispatching tools/call to MCPCommands. This lets the Godot addon BE the MCP
-## server (streamable-HTTP) with no external Python process; mcp_http_server.gd
-## wraps this in a TCP/HTTP loop. Unit-tested headless (tests/test_protocol.gd).
+## server with no external process; mcp_http_server.gd (streamable HTTP and the
+## 2024-11-05 HTTP+SSE transport), mcp_stdio.gd and mcp_web.gd carry it.
+## Unit-tested headless (tests/test_protocol.gd).
+##
+## Two ways to change the tool list, so a game can ship a short one:
+## - `allow`: names of built-in tools to keep (empty keeps all of them).
+## - `providers`: objects with tool_defs() -> Array of MCP tool dictionaries and
+##   call_tool(name, args) -> value. A provider tool hides a built-in of the same name.
+## A tool value is JSON-able data (sent as text, and as structuredContent when it is a
+## Dictionary), {"__error__": true, "msg": ...}, {"__content__": [MCP content blocks]},
+## or an MCPPending that finishes later with one of those.
 
-const PROTOCOL_VERSION := "2025-06-18"
+## Newest first. Two eras (see 2026-07-28 basic/versioning):
+## - Legacy (2025-11-25 and earlier): an initialize handshake picks the version. initialize
+##   answers with the client's version when it is one of LEGACY_VERSIONS, else the newest of them.
+## - Modern (2026-07-28): no handshake. Every request names its version in
+##   params._meta["io.modelcontextprotocol/protocolVersion"]; results carry resultType and the
+##   server's identity in _meta; server/discover lists the versions; ping is gone.
+## One server answers both, request by request.
+const MODERN_VERSIONS := ["2026-07-28"]
+const LEGACY_VERSIONS := ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
+const SUPPORTED_VERSIONS := ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
+const PROTOCOL_VERSION := "2025-11-25"
+const META_VERSION := "io.modelcontextprotocol/protocolVersion"
+const META_SERVER := "io.modelcontextprotocol/serverInfo"
+## MCP error codes (2026-07-28 schema).
+const HEADER_MISMATCH := -32020
+const UNSUPPORTED_PROTOCOL_VERSION := -32022
+## How long a client may keep tools/list and server/discover (2026-07-28 CacheableResult).
+## The list never changes while the program runs, and it holds nothing per user.
+const LIST_TTL_MS := 300000
 const SERVER_NAME := "vsekai-godot-mcp"
-const SERVER_VERSION := "0.1.0"
+const SERVER_VERSION := "0.2.0"
 
 # Relative preload (not the class_name global) so this resolves headless and
 # wherever the addon is installed.
 const MCPCommandsLib = preload("mcp_commands.gd")
+const PendingLib = preload("mcp_pending.gd")
 
 var commands = null  # MCPCommands instance
+var allow := PackedStringArray()
+var providers: Array = []
+var server_name := SERVER_NAME
+var server_version := SERVER_VERSION
+var server_title := ""
+var instructions := ""
+## The version the last initialize agreed on.
+var negotiated := PROTOCOL_VERSION
 var _rpc := JSONRPC.new()   # Godot's built-in JSON-RPC envelope helper
 
 
@@ -26,9 +62,12 @@ func _init() -> void:
 
 # --- JSON-RPC entry ----------------------------------------------------------
 
-## Returns a JSON-RPC response Dictionary, or null when the message is a
-## notification (no "id") that needs no reply.
+## Returns a JSON-RPC response Dictionary, an Array for a batch, null when the
+## message needs no reply (a notification, or a response to us), or an MCPPending
+## when a tool finishes later (see MCPPending.settle).
 func handle_rpc(req) -> Variant:
+	if typeof(req) == TYPE_ARRAY:
+		return _handle_batch(req)
 	if typeof(req) != TYPE_DICTIONARY:
 		return _error(null, -32600, "invalid request")
 	# A JSON-RPC message with no "method" is a response (to a server->client
@@ -36,27 +75,132 @@ func handle_rpc(req) -> Variant:
 	# transport answers 202). Per spec these need no response.
 	if not req.has("method"):
 		return null
-	var id = req.get("id", null)
+	var id = json_id(req.get("id", null))
 	var method := String(req.get("method", ""))
+	var version := request_version(req)
+	if version != "" and not (version in SUPPORTED_VERSIONS):
+		if id == null:
+			return null
+		return unsupported_version(id, version)
+	var modern := version in MODERN_VERSIONS
 	match method:
 		"initialize":
-			return _result(id, {
-				"protocolVersion": PROTOCOL_VERSION,
-				"capabilities": { "tools": { "listChanged": false } },
-				"serverInfo": { "name": SERVER_NAME, "version": SERVER_VERSION },
-			})
-		"notifications/initialized", "notifications/cancelled":
+			return _result(id, _initialize_result(req.get("params", {})))
+		"notifications/initialized", "notifications/cancelled", "initialized":
 			return null
+		"server/discover":
+			return _result(id, _modern_result(_discover_result(), true))
 		"ping":
+			if modern:
+				return _error(id, -32601, "method not found: ping (removed in 2026-07-28)")
 			return _result(id, {})
 		"tools/list":
-			return _result(id, { "tools": _tool_schemas() })
+			var listed := { "tools": tool_schemas() }
+			return _result(id, _modern_result(listed, true) if modern else listed)
 		"tools/call":
-			return _call_tool(id, req.get("params", {}))
+			var r = _call_tool(id, req.get("params", {}))
+			if modern and r is PendingLib:
+				return r.then(func(resp): return _modern_response(resp))
+			return _modern_response(r) if modern else r
 		_:
 			if id == null:
 				return null  # unknown notification: ignore
 			return _error(id, -32601, "method not found: " + method)
+
+
+## Godot's JSON parser reads every number as a float, so an id of 1 would go back as 1.0, which
+## strict clients (the Python SDK) refuse to match. A whole-number id goes back as an integer.
+static func json_id(id):
+	if typeof(id) == TYPE_FLOAT and is_finite(id) and id == floorf(id) and absf(id) < 9007199254740992.0:
+		return int(id)
+	return id
+
+
+## The version a modern request names in its _meta, or "" for a legacy request.
+static func request_version(req) -> String:
+	if typeof(req) != TYPE_DICTIONARY:
+		return ""
+	var params = req.get("params", {})
+	if typeof(params) != TYPE_DICTIONARY:
+		return ""
+	var meta = params.get("_meta", {})
+	if typeof(meta) != TYPE_DICTIONARY:
+		return ""
+	return String(meta.get(META_VERSION, ""))
+
+
+func unsupported_version(id, requested: String) -> Dictionary:
+	var e := _error(id, UNSUPPORTED_PROTOCOL_VERSION, "Unsupported protocol version")
+	e.error["data"] = { "supported": SUPPORTED_VERSIONS.duplicate(), "requested": requested }
+	return e
+
+
+func server_info() -> Dictionary:
+	var info := { "name": server_name, "version": server_version }
+	if server_title != "":
+		info["title"] = server_title
+	return info
+
+
+func _capabilities() -> Dictionary:
+	return { "tools": { "listChanged": false } }
+
+
+func _discover_result() -> Dictionary:
+	var out := { "supportedVersions": SUPPORTED_VERSIONS.duplicate(), "capabilities": _capabilities() }
+	if instructions != "":
+		out["instructions"] = instructions
+	return out
+
+
+## A 2026-07-28 result: resultType, the server's identity in _meta, and cache hints on lists.
+func _modern_result(result, cacheable := false):
+	if typeof(result) != TYPE_DICTIONARY:
+		return result
+	var r: Dictionary = result.duplicate()
+	r["resultType"] = "complete"
+	var meta: Dictionary = r.get("_meta", {})
+	meta[META_SERVER] = server_info()
+	r["_meta"] = meta
+	if cacheable:
+		r["ttlMs"] = LIST_TTL_MS
+		r["cacheScope"] = "public"
+	return r
+
+
+func _modern_response(resp):
+	if resp is Dictionary and resp.has("result"):
+		resp["result"] = _modern_result(resp["result"])
+	return resp
+
+
+## JSON-RPC 2.0 batch (MCP 2025-03-26 allows them; later versions dropped them, and
+## answering one anyway costs nothing). Notifications get no entry; an empty batch is
+## an invalid request; a batch of only notifications gets no reply.
+func _handle_batch(batch: Array):
+	if batch.is_empty():
+		return _error(null, -32600, "invalid request: empty batch")
+	var out := []
+	for item in batch:
+		var r = handle_rpc(item) if typeof(item) == TYPE_DICTIONARY else _error(null, -32600, "invalid request")
+		if r != null:
+			out.append(r)
+	return null if out.is_empty() else out
+
+
+func _initialize_result(params) -> Dictionary:
+	var asked := ""
+	if typeof(params) == TYPE_DICTIONARY:
+		asked = String(params.get("protocolVersion", ""))
+	negotiated = asked if asked in LEGACY_VERSIONS else PROTOCOL_VERSION
+	var out := {
+		"protocolVersion": negotiated,
+		"capabilities": _capabilities(),
+		"serverInfo": server_info(),
+	}
+	if instructions != "":
+		out["instructions"] = instructions
+	return out
 
 
 func _result(id, value) -> Dictionary:
@@ -73,24 +217,45 @@ func parse_error_response(code: int, msg: String) -> Dictionary:
 
 # --- tools/call --------------------------------------------------------------
 
-func _call_tool(id, params) -> Dictionary:
+func _call_tool(id, params) -> Variant:
 	if typeof(params) != TYPE_DICTIONARY:
 		return _error(id, -32602, "invalid params")
 	var name := String(params.get("name", ""))
 	var args = params.get("arguments", {})
 	if typeof(args) != TYPE_DICTIONARY:
 		args = {}
-	if not _tool_names().has(name):
+	var out = null
+	var provider = _provider_for(name)
+	if provider != null:
+		out = provider.call_tool(name, args)
+	elif _builtin_names().has(name):
+		out = commands.dispatch(name, args)
+	else:
 		return _error(id, -32602, "unknown tool: " + name)
-	var out = commands.dispatch(name, args)
-	var is_err: bool = out is Dictionary and out.get("__error__", false)
-	var text := JSON.stringify(out.get("msg", "error")) if is_err else JSON.stringify(out)
-	# MCP tool result: content blocks + isError flag (tool errors are reported
-	# in-band, not as JSON-RPC errors).
-	return _result(id, {
-		"content": [ { "type": "text", "text": text } ],
-		"isError": is_err,
-	})
+	if out is PendingLib:
+		return out.then(func(v): return _result(id, tool_result(v)))
+	return _result(id, tool_result(out))
+
+
+## The MCP CallToolResult for a tool value. Tool errors are reported in-band
+## (isError), not as JSON-RPC errors.
+static func tool_result(out) -> Dictionary:
+	if out is Dictionary and out.get("__error__", false):
+		return { "content": [ { "type": "text", "text": JSON.stringify(out.get("msg", "error")) } ], "isError": true }
+	if out is Dictionary and out.has("__content__"):
+		return { "content": out["__content__"], "isError": bool(out.get("isError", false)) }
+	var r := { "content": [ { "type": "text", "text": JSON.stringify(out) } ], "isError": false }
+	if out is Dictionary:
+		r["structuredContent"] = out
+	return r
+
+
+func _provider_for(name: String):
+	for p in providers:
+		for t in p.tool_defs():
+			if t.get("name", "") == name:
+				return p
+	return null
 
 
 # --- tool registry -----------------------------------------------------------
@@ -170,10 +335,12 @@ func _tool_defs() -> Array:
 		["get_editor_setting", "Read an EditorSettings value.", { "setting": "string" }],
 	]
 
-func _tool_names() -> PackedStringArray:
+## Built-in tool names after the `allow` trim.
+func _builtin_names() -> PackedStringArray:
 	var names := PackedStringArray()
 	for t in _tool_defs():
-		names.append(t[0])
+		if allow.is_empty() or allow.has(t[0]):
+			names.append(t[0])
 	return names
 
 # MCP REQUIRES inputSchema to be a JSON Schema (clients validate tool arguments
@@ -183,9 +350,28 @@ func _tool_names() -> PackedStringArray:
 const _OPTIONAL_PARAMS := ["max_depth", "name", "args", "monitors", "default", "no_inheritance", "lines", "bones", "paths"]
 const _ALL_OPTIONAL_TOOLS := ["play_scene", "screenshot", "get_performance", "find_nodes", "read_log", "get_aabb", "reimport_asset"]
 
-func _tool_schemas() -> Array:
+## Built-in tools that only read. Clients show the hint; a page can list only these.
+const READ_ONLY := ["ping", "get_scene_tree", "get_node", "get_property", "list_methods",
+	"list_properties", "get_open_scene", "list_scenes", "is_playing", "get_performance", "read_log",
+	"list_monitors", "get_memory_info", "get_os_info", "get_video_info", "get_render_info",
+	"read_file", "file_exists", "list_dir", "find_files", "get_project_setting",
+	"get_nodes_in_group", "find_nodes", "get_node_count", "get_transform", "get_aabb",
+	"get_bone_poses", "class_exists", "get_class_methods", "get_class_properties", "list_signals",
+	"get_editor_setting"]
+
+## tools/list: provider tools first, then the built-ins they do not hide.
+func tool_schemas() -> Array:
 	var out := []
+	var taken := {}
+	for p in providers:
+		for t in p.tool_defs():
+			if not taken.has(t.get("name", "")):
+				taken[t.get("name", "")] = true
+				out.append(t)
+	var keep := _builtin_names()
 	for t in _tool_defs():
+		if taken.has(t[0]) or not keep.has(t[0]):
+			continue
 		var props := {}
 		var required := []
 		for pname in t[2]:
@@ -196,5 +382,8 @@ func _tool_schemas() -> Array:
 		var schema := { "type": "object", "properties": props, "additionalProperties": false }
 		if not required.is_empty():
 			schema["required"] = required
-		out.append({ "name": t[0], "description": t[1], "inputSchema": schema })
+		var tool := { "name": t[0], "description": t[1], "inputSchema": schema }
+		if t[0] in READ_ONLY:
+			tool["annotations"] = { "readOnlyHint": true }
+		out.append(tool)
 	return out
