@@ -80,7 +80,7 @@ func _configure() -> void:
 			protocol.set(key, String(v))
 	for path in ProjectSettings.get_setting(SETTINGS + "providers", PackedStringArray()):
 		var script = load(path)
-		if script == null:
+		if script == null or not script.can_instantiate():
 			push_error("[godot_mcp] provider did not load: " + path)
 			continue
 		var p = script.new()
