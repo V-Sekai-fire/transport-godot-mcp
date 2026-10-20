@@ -10,7 +10,7 @@ extends Node
 ##   /messages, on one port.
 ## - stdio with `-- --mcp-stdio` (start the program with --quiet so the banner stays off
 ##   standard output). The game quits when the client closes standard input.
-## - Web export: window.godotMcp and WebMCP (mcp_web.gd) instead of both.
+## A web export serves nothing: a page cannot listen, and it has no standard input.
 ##
 ## A game trims and extends the tool list in Project Settings, without code:
 ## - vsekai_godot_mcp/allow (PackedStringArray): built-in tools to keep; empty keeps all.
@@ -25,7 +25,6 @@ const MCPCommandsLib = preload("mcp_commands.gd")
 const MCPProtocolLib = preload("mcp_protocol.gd")
 const MCPHttpServerLib = preload("mcp_http_server.gd")
 const MCPStdioLib = preload("mcp_stdio.gd")
-const MCPWebLib = preload("mcp_web.gd")
 
 const HOST := "127.0.0.1"   # adb forward reaches the device loopback
 const SETTINGS := "vsekai_godot_mcp/"
@@ -51,24 +50,19 @@ var _cmds = MCPCommandsLib.new()
 var protocol = MCPProtocolLib.new()
 var _http = null
 var _stdio = null
-var _web = null
 
 
 func _ready() -> void:
 	protocol.commands = _cmds
 	_configure()
 	if OS.has_feature("web"):
-		_web = MCPWebLib.new()
-		_web.protocol = protocol
-		if _web.start() == OK:
-			print("[godot_mcp] RUNTIME MCP on window.godotMcp and WebMCP")
-	else:
-		_start_http()
-		if "--mcp-stdio" in OS.get_cmdline_user_args():
-			_stdio = MCPStdioLib.new()
-			_stdio.protocol = protocol
-			_stdio.start()
-			printerr("[godot_mcp] RUNTIME MCP on stdio")
+		return
+	_start_http()
+	if "--mcp-stdio" in OS.get_cmdline_user_args():
+		_stdio = MCPStdioLib.new()
+		_stdio.protocol = protocol
+		_stdio.start()
+		printerr("[godot_mcp] RUNTIME MCP on stdio")
 	set_process(true)
 
 
