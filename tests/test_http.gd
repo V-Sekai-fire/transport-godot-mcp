@@ -64,8 +64,10 @@ func _run() -> void:
 	_check(note.code == 202, "notification -> 202")
 
 	# SSE: Accept text/event-stream -> event-stream body
-	var sse := h.route("POST", "/mcp", { "accept": "application/json, text/event-stream" }, _rpc("ping", {}))
-	_check(sse.code == 200 and sse.ctype == "text/event-stream", "Accept SSE -> event-stream")
+	var sse := h.route("POST", "/mcp", { "accept": "text/event-stream" }, _rpc("ping", {}))
+	_check(sse.code == 200 and sse.ctype == "text/event-stream", "Accept SSE only -> event-stream")
+	var both := h.route("POST", "/mcp", { "accept": "application/json, text/event-stream" }, _rpc("ping", {}))
+	_check(both.code == 200 and both.ctype == "application/json", "Accept both -> one JSON answer")
 	_check(sse.body.begins_with("event: message\ndata: "), "SSE body framed")
 
 	# --- streamable-HTTP behavior (de-facto: match the reference SDKs) ---

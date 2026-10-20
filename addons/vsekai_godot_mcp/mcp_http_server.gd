@@ -119,7 +119,7 @@ func route(method: String, path: String, headers: Dictionary, body: String) -> D
 				return _json(400, e)
 
 	var resp = protocol.handle_rpc(req)
-	var sse := "text/event-stream" in String(headers.get("accept", ""))
+	var sse := wants_sse(String(headers.get("accept", "")))
 	if is_pending(resp):
 		return { "pending": resp, "sse": sse }
 	var status := error_status(resp, modern)
@@ -170,6 +170,13 @@ static func error_status(resp, modern: bool) -> int:
 
 static func _json(code: int, msg) -> Dictionary:
 	return { "code": code, "ctype": "application/json", "body": JSON.stringify(msg) }
+
+
+## One JSON answer when the client takes JSON (MCP clients accept both): an SSE event carries the
+## same bytes, and some clients cap an event's size (the Python SDK at 1 MiB), so a model sent
+## back by get_file would not arrive. An event stream only for a client that takes nothing else.
+static func wants_sse(accept: String) -> bool:
+	return "text/event-stream" in accept and not ("application/json" in accept or "*/*" in accept)
 
 
 ## The HTTP parts for a finished JSON-RPC answer (null = nothing to answer).
