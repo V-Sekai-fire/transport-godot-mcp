@@ -17,6 +17,7 @@ class_name MCPHttpServer
 const MCPProtocolLib = preload("mcp_protocol.gd")
 const BufferLib = preload("mcp_command_buffer.gd")
 const PendingLib = preload("mcp_pending.gd")
+const A2ALib = preload("a2a.gd")
 const DEFAULT_PORT := 8788
 const SUBMIT_PER_FRAME := 16  # constant per-frame execution budget
 const KEEPALIVE_MSEC := 15000  # an SSE comment this often keeps proxies from closing a stream
@@ -25,6 +26,7 @@ const KEEPALIVE_MSEC := 15000  # an SSE comment this often keeps proxies from cl
 const MAX_REQUEST_BYTES := 64 << 20
 
 var protocol = MCPProtocolLib.new()
+var a2a = A2ALib.new()  # A2A 1.0 on the same listener: the agent card and POST /
 var _server := TCPServer.new()
 var _clients: Array = []  # connections still reading a request
 var _buffer = BufferLib.new(256)  # parsed requests awaiting constant-work submit
@@ -41,6 +43,7 @@ var enforce_origin := false
 
 
 func start(port: int = DEFAULT_PORT, host: String = "127.0.0.1") -> int:
+	a2a.public_url = "http://%s:%d/" % [host, port]
 	return _server.listen(port, host)
 
 
@@ -66,6 +69,7 @@ const SUPPORTED_VERSIONS := MCPProtocolLib.SUPPORTED_VERSIONS
 
 
 ## Produce { code, ctype, body } for a parsed HTTP request. No sockets.
+## A2A (/ and the agent card) is answered by a2a.gd.
 ## Two more shapes, which poll() finishes: { "open_stream": true } for GET /sse, and a
 ## "pending" key (with "sse") when a tool takes frames. A POST to /messages adds
 ## "deliver_to" (the 2024-11-05 session) and "payload" (the JSON-RPC answer to send there).
@@ -81,6 +85,8 @@ func route(method: String, path: String, headers: Dictionary, body: String) -> D
 
 	if method == "OPTIONS":
 		return {"code": 204, "ctype": "text/plain", "body": ""}  # CORS preflight
+	if A2ALib.owns(path):
+		return a2a.route(method, path, headers, body, protocol)
 	var bare := path.split("?")[0]
 	if bare == "/sse":
 		if method != "GET":
