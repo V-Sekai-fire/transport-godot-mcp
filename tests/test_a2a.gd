@@ -177,8 +177,10 @@ func _run() -> void:
 	_check(h.route("GET", "/.well-known/agent-card.json", {"origin": "http://evil.example"}, "").code == 403, "card with Origin -> 403")
 	_check(int((await _rpc(h, "ListTasks", {})).result.totalSize) == before, "refused requests created no task")
 	_check(h.route("OPTIONS", "/", {}, "").code == 204, "OPTIONS without Origin still 204")
-	_check(h.route("OPTIONS", "/mcp", {"origin": "http://evil.example"}, "").code == 204, "MCP preflight is unchanged")
-	_check(h.route("POST", "/mcp", {"origin": "https://evil.example.com"}, _body("ping", {})).code == 200, "MCP still accepts any Origin (not changed here)")
+	_check(h.route("OPTIONS", "/mcp", {"origin": "http://evil.example"}, "").code == 403, "MCP preflight with Origin -> 403 too")
+	h.origin_policy = "off"
+	_check(h.route("POST", "/", slow_hdr, call_body).code == 403, "A2A refuses an Origin even when MCP's policy is off")
+	h.origin_policy = "refuse"
 
 	# --- the allow trim applies to A2A too -------------------------------
 	h.protocol.allow = PackedStringArray(["ping"])

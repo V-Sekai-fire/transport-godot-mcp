@@ -19,6 +19,9 @@ extends Node
 ##   child of this node, so it can reach the scene tree. A provider with scene_root() picks the
 ##   node the built-in tools treat as the scene.
 ## - vsekai_godot_mcp/server_name, server_title, instructions: what initialize reports.
+## - vsekai_godot_mcp/origin_policy (String, default "refuse"): what HTTP does with a request that
+##   carries an Origin header, which only a web page sends. "refuse" answers 403, "localhost" lets a
+##   loopback page through, "off" checks nothing. A2A refuses an Origin whatever this says.
 ## - vsekai_godot_mcp/listen_by_default (bool, default true): when false, HTTP listens only
 ##   when --mcp-port= or GODOT_MCP_PORT asks for it.
 const MCPCommandsLib = preload("mcp_commands.gd")
@@ -97,6 +100,11 @@ func _start_http() -> void:
 		return
 	_http = MCPHttpServerLib.new()
 	_http.protocol = protocol
+	var policy := String(ProjectSettings.get_setting(SETTINGS + "origin_policy", "refuse"))
+	if policy in MCPHttpServerLib.ORIGIN_POLICIES:
+		_http.origin_policy = policy
+	else:
+		push_error("[godot_mcp] unknown origin_policy '%s'; keeping 'refuse'" % policy)
 	if _http.start(port, HOST) == OK:
 		printerr("[godot_mcp] RUNTIME MCP on http://%s:%d/mcp (and /sse)" % [HOST, port])
 	else:

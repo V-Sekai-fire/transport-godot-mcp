@@ -12,7 +12,7 @@ extends RefCounted
 ## store of the last MAX_TASKS tasks, CancelTask answers TaskNotCancelable, and streaming is off.
 ##
 ## A request that carries an Origin header is refused (403) on every A2A path, so a web page
-## cannot drive editor tools. /mcp is unchanged (enforce_origin there is still off by default).
+## cannot drive editor tools, whatever MCPHttpServer.origin_policy says for /mcp.
 ##
 ## route() is transport-free (parsed request -> response parts), like MCPHttpServer.route().
 ## A tool that takes frames gives { "pending": MCPPending, "sse": false }, which poll() finishes.

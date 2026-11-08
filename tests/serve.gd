@@ -8,6 +8,8 @@ func _initialize() -> void:
 	ProjectSettings.set_setting("vsekai_godot_mcp/providers", PackedStringArray(["res://tests/slow_tools.gd"]))
 	ProjectSettings.set_setting("vsekai_godot_mcp/server_name", "interop-test")
 	ProjectSettings.set_setting("vsekai_godot_mcp/listen_by_default", false)
+	if OS.get_environment("GODOT_MCP_ORIGIN_POLICY") != "":
+		ProjectSettings.set_setting("vsekai_godot_mcp/origin_policy", OS.get_environment("GODOT_MCP_ORIGIN_POLICY"))
 	var scene := Node3D.new()
 	scene.name = "Interop"
 	root.add_child(scene)
