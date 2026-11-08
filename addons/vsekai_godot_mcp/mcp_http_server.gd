@@ -83,10 +83,11 @@ func route(method: String, path: String, headers: Dictionary, body: String) -> D
 		if origin != "" and not _origin_allowed(origin):
 			return {"code": 403, "ctype": "text/plain", "body": "forbidden origin"}
 
-	if method == "OPTIONS":
-		return {"code": 204, "ctype": "text/plain", "body": ""}  # CORS preflight
+	# A2A before the preflight answer below: a2a.route() refuses any request that carries Origin.
 	if A2ALib.owns(path):
 		return a2a.route(method, path, headers, body, protocol)
+	if method == "OPTIONS":
+		return {"code": 204, "ctype": "text/plain", "body": ""}  # CORS preflight
 	var bare := path.split("?")[0]
 	if bare == "/sse":
 		if method != "GET":

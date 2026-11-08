@@ -159,6 +159,27 @@ func _run() -> void:
 	_check((await _rpc(h, "ListTasks", {})).result.totalSize == 256, "task store is capped at 256")
 	_check((await _rpc(h, "GetTask", {"id": t.id})).error.code == -32001, "the oldest task was evicted")
 
+	# --- a browser page is refused before anything runs -------------------
+	var before := int((await _rpc(h, "ListTasks", {})).result.totalSize)
+	var call_body := _body("SendMessage", _msg("call get_scene_tree"))
+	for origin in ["http://evil.example", "null", ""]:
+		var hdr := V.duplicate()
+		hdr["origin"] = origin
+		var refused: Dictionary = h.route("POST", "/", hdr, call_body)
+		_check(refused.code == 403, "POST / with Origin '%s' -> 403" % origin)
+	var slow_hdr := V.duplicate()
+	slow_hdr["origin"] = "http://evil.example"
+	var slow_refused: Dictionary = h.route("POST", "/", slow_hdr, _body("SendMessage", _msg({"tool": "wait_frames", "arguments": {"frames": 1}})))
+	_check(slow_refused.code == 403 and not slow_refused.has("pending"), "a slow tool is refused too, not started")
+	var plain_hdr := {"origin": "http://evil.example", "content-type": "text/plain"}
+	_check(h.route("POST", "/", plain_hdr, call_body).code == 403, "no-cors text/plain POST (no A2A-Version) -> 403")
+	_check(h.route("OPTIONS", "/", {"origin": "http://evil.example", "access-control-request-method": "POST"}, "").code == 403, "preflight with Origin -> 403, not 204")
+	_check(h.route("GET", "/.well-known/agent-card.json", {"origin": "http://evil.example"}, "").code == 403, "card with Origin -> 403")
+	_check(int((await _rpc(h, "ListTasks", {})).result.totalSize) == before, "refused requests created no task")
+	_check(h.route("OPTIONS", "/", {}, "").code == 204, "OPTIONS without Origin still 204")
+	_check(h.route("OPTIONS", "/mcp", {"origin": "http://evil.example"}, "").code == 204, "MCP preflight is unchanged")
+	_check(h.route("POST", "/mcp", {"origin": "https://evil.example.com"}, _body("ping", {})).code == 200, "MCP still accepts any Origin (not changed here)")
+
 	# --- the allow trim applies to A2A too -------------------------------
 	h.protocol.allow = PackedStringArray(["ping"])
 	var trimmed = (await _rpc(h, "SendMessage", _msg("call get_scene_tree"))).result.task

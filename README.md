@@ -17,7 +17,7 @@ The running game serves one tool list on every transport its platform has:
 - Streamable HTTP at `http://127.0.0.1:8789/mcp`, and the older HTTP+SSE pair (`GET /sse`, then `POST /messages`) on the same port. Set the port with `-- --mcp-port=N` or `GODOT_MCP_PORT`; 0 turns HTTP off.
 - stdio, with `--quiet ... -- --mcp-stdio`. The game quits when the client closes standard input.
 
-The same listener also answers A2A 1.0 (JSON-RPC): the agent card at `/.well-known/agent-card.json` and `POST /`. A message names a tool, either as a data part `{"tool": name, "arguments": {...}}` or as text (`tools`, `call <tool> [json]`), and the reply is a finished task. `a2a.gd` has the details; streaming and push are off.
+The same listener also answers A2A 1.0 (JSON-RPC): the agent card at `/.well-known/agent-card.json` and `POST /`. A message names a tool, either as a data part `{"tool": name, "arguments": {...}}` or as text (`tools`, `call <tool> [json]`), and the reply is a finished task. `a2a.gd` has the details; streaming and push are off. A2A refuses any request that carries an `Origin` header, so a web page cannot drive editor tools through it.
 
 Protocol versions 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 start with `initialize`. Version 2026-07-28 has no handshake: each request names its version, and `server/discover` lists the versions.
 

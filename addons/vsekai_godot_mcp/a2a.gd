@@ -11,6 +11,9 @@ extends RefCounted
 ## Every task is already finished when SendMessage answers, so GetTask and ListTasks read a
 ## store of the last MAX_TASKS tasks, CancelTask answers TaskNotCancelable, and streaming is off.
 ##
+## A request that carries an Origin header is refused (403) on every A2A path, so a web page
+## cannot drive editor tools. /mcp is unchanged (enforce_origin there is still off by default).
+##
 ## route() is transport-free (parsed request -> response parts), like MCPHttpServer.route().
 ## A tool that takes frames gives { "pending": MCPPending, "sse": false }, which poll() finishes.
 
@@ -54,6 +57,14 @@ static func owns(path: String) -> bool:
 
 
 func route(method: String, path: String, headers: Dictionary, body: String, protocol) -> Dictionary:
+	# A browser page always sends Origin, and can POST text/plain to a loopback port with no
+	# preflight. `call run_script ...` would then run in the editor, so refuse before parsing.
+	# An empty or "null" Origin (sandboxed iframe, file://) counts too. SDK, httpx and curl clients
+	# send none.
+	if headers.has("origin"):
+		return {"code": 403, "ctype": "text/plain", "body": "browser requests are refused"}
+	if method == "OPTIONS":
+		return {"code": 204, "ctype": "text/plain", "body": ""}
 	var bare := path.split("?")[0]
 	if bare == CARD_PATH:
 		if method != "GET":
