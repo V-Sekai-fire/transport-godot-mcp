@@ -33,13 +33,17 @@ var _buffer = BufferLib.new(256)  # parsed requests awaiting constant-work submi
 var _streams := {}  # 2024-11-05 session id -> { peer, last }
 var in_flight := 0  # requests waiting on a tool that takes frames
 
-# DNS-rebinding (Origin) protection. The MCP spec says servers MUST validate
-# Origin, but the reference TypeScript/Python SDKs ship it DISABLED by default
-# (enableDnsRebindingProtection=false; cf. CVE-2025-66414) and most real
-# streamable-HTTP servers follow suit, relying on the localhost bind. We match
-# that de-facto default (off) so we don't reject legitimate Origin-setting
-# clients; flip enforce_origin=true to get spec-strict 403s.
-var enforce_origin := false
+# Origin protection. A browser page always sends Origin and can POST text/plain to a loopback
+# port with no preflight, so a page the user opens could run tools (`run_script`) in the editor.
+# The MCP spec says servers MUST validate Origin; the reference SDKs ship it disabled. We refuse
+# by default, because no MCP client we know of (SDKs, CLIs, desktop apps) sends an Origin.
+# - "refuse" (default): any request that carries an Origin header gets 403.
+# - "localhost": only a loopback Origin is allowed (a dev server on the same machine).
+# - "off": no check. For a game that deliberately serves a browser client.
+# A2A always refuses (a2a.gd). A game sets vsekai_godot_mcp/origin_policy in Project Settings.
+const ORIGIN_POLICIES := ["refuse", "localhost", "off"]
+var origin_policy := "refuse"
+var _loopback_origin := RegEx.create_from_string("^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]{1,5})?$")
 
 
 func start(port: int = DEFAULT_PORT, host: String = "127.0.0.1") -> int:
@@ -74,13 +78,10 @@ const SUPPORTED_VERSIONS := MCPProtocolLib.SUPPORTED_VERSIONS
 ## "pending" key (with "sse") when a tool takes frames. A POST to /messages adds
 ## "deliver_to" (the 2024-11-05 session) and "payload" (the JSON-RPC answer to send there).
 func route(method: String, path: String, headers: Dictionary, body: String) -> Dictionary:
-	# Origin / DNS-rebinding protection — OFF by default to match the reference
-	# SDKs and real-world servers (see enforce_origin above). When enabled, a
-	# present non-localhost Origin is rejected; absent Origin (CLI clients) is
-	# always allowed.
-	if enforce_origin:
-		var origin := String(headers.get("origin", ""))
-		if origin != "" and not _origin_allowed(origin):
+	# A2A applies its own Origin rule inside a2a.route() (always refuse).
+	if not A2ALib.owns(path) and headers.has("origin"):
+		var origin := String(headers["origin"])
+		if origin_policy == "refuse" or (origin_policy == "localhost" and not _origin_allowed(origin)):
 			return {"code": 403, "ctype": "text/plain", "body": "forbidden origin"}
 
 	# A2A before the preflight answer below: a2a.route() refuses any request that carries Origin.
@@ -253,16 +254,10 @@ static func is_pending(v) -> bool:
 	return false
 
 
+## A loopback Origin: http or https, the host exactly localhost, 127.0.0.1 or [::1], then an
+## optional :port and nothing else. A prefix test would pass http://localhost.evil.example.
 func _origin_allowed(origin: String) -> bool:
-	var o := origin.to_lower()
-	return (
-		o.begins_with("http://localhost")
-		or o.begins_with("https://localhost")
-		or o.begins_with("http://127.0.0.1")
-		or o.begins_with("https://127.0.0.1")
-		or o.begins_with("http://[::1]")
-		or o.begins_with("https://[::1]")
-	)
+	return _loopback_origin.search(origin.to_lower()) != null
 
 
 ## Opens a 2024-11-05 session in the routing table (poll() owns the socket). Tests call it.

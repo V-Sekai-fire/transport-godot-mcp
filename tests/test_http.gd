@@ -70,16 +70,28 @@ func _run() -> void:
 	_check(both.code == 200 and both.ctype == "application/json", "Accept both -> one JSON answer")
 	_check(sse.body.begins_with("event: message\ndata: "), "SSE body framed")
 
-	# --- streamable-HTTP behavior (de-facto: match the reference SDKs) ---
-	# Origin enforcement is OFF by default, like @modelcontextprotocol/sdk —
-	# any Origin is accepted so legit browser/proxy clients aren't rejected.
-	_check(h.route("POST", "/mcp", { "origin": "https://evil.example.com" }, _rpc("ping", {})).code == 200, "default: foreign Origin allowed (enforce off)")
-	# Opt-in strict mode reinstates the spec MUST.
-	h.enforce_origin = true
-	_check(h.route("POST", "/mcp", { "origin": "https://evil.example.com" }, _rpc("ping", {})).code == 403, "enforce: foreign Origin -> 403")
-	_check(h.route("POST", "/mcp", { "origin": "http://localhost:5173" }, _rpc("ping", {})).code == 200, "enforce: localhost Origin allowed")
-	_check(h.route("POST", "/mcp", {}, _rpc("ping", {})).code != 403, "enforce: no-Origin (CLI) allowed")
-	h.enforce_origin = false
+	# --- Origin: a web page is refused by default, since it could run tools in the editor ---
+	var evil := { "origin": "https://evil.example.com" }
+	_check(h.origin_policy == "refuse", "default origin_policy is refuse")
+	_check(h.route("POST", "/mcp", evil, _rpc("ping", {})).code == 403, "refuse: foreign Origin -> 403")
+	_check(h.route("POST", "/mcp", { "origin": "http://localhost:5173" }, _rpc("ping", {})).code == 403, "refuse: a localhost page is refused too")
+	_check(h.route("POST", "/mcp", { "origin": "null" }, _rpc("ping", {})).code == 403, "refuse: Origin null -> 403")
+	_check(h.route("POST", "/mcp", { "origin": "" }, _rpc("ping", {})).code == 403, "refuse: empty Origin -> 403")
+	_check(h.route("OPTIONS", "/mcp", evil, "").code == 403, "refuse: preflight with Origin -> 403, not 204")
+	_check(h.route("POST", "/messages?session_id=x", evil, "{}").code == 403, "refuse: /messages with Origin -> 403")
+	_check(h.route("GET", "/sse", evil, "").code == 403 and not h.route("GET", "/sse", evil, "").has("open_stream"), "refuse: /sse with Origin opens no stream")
+	_check(h.route("POST", "/mcp", {}, _rpc("ping", {})).code == 200, "refuse: no Origin (SDK, CLI) allowed")
+	_check(h.route("OPTIONS", "/mcp", {}, "").code == 204, "refuse: OPTIONS without Origin still 204")
+	h.origin_policy = "localhost"
+	_check(h.route("POST", "/mcp", evil, _rpc("ping", {})).code == 403, "localhost: foreign Origin -> 403")
+	_check(h.route("POST", "/mcp", { "origin": "http://localhost:5173" }, _rpc("ping", {})).code == 200, "localhost: localhost Origin allowed")
+	for bad in ["http://localhost.evil.example", "http://127.0.0.1.evil.example", "http://localhost:80@evil.example", "http://localhost:99999x", "ftp://localhost", "http://evil.example/localhost"]:
+		_check(h.route("POST", "/mcp", { "origin": bad }, _rpc("ping", {})).code == 403, "localhost: '%s' -> 403" % bad)
+	for good in ["http://localhost", "https://localhost:8443", "http://127.0.0.1:5173", "http://[::1]:3000", "HTTP://LOCALHOST:5173"]:
+		_check(h.route("POST", "/mcp", { "origin": good }, _rpc("ping", {})).code == 200, "localhost: '%s' -> 200" % good)
+	h.origin_policy = "off"
+	_check(h.route("POST", "/mcp", evil, _rpc("ping", {})).code == 200, "off: any Origin allowed")
+	h.origin_policy = "refuse"
 	# DELETE (no sessions) -> 405
 	_check(h.route("DELETE", "/mcp", {}, "").code == 405, "DELETE -> 405")
 	# MCP-Protocol-Version: unsupported -> 400, supported -> 200, absent -> 200
